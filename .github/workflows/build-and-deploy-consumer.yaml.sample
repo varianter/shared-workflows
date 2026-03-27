@@ -1,0 +1,36 @@
+name: Build and Deploy (Variant Dash sample deploy)
+
+on:
+  push:
+    branches:
+      - feature/dockerize
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment to deploy'
+        required: true
+        default: dev
+        type: choice
+        options:
+          - lab
+          - dev
+          - prod
+jobs:
+  use-shared-workflow:
+    uses: varianter/shared-workflows/.github/workflows/build-and-deploy-shared.yaml@main
+    secrets: inherit
+    with:
+      environment: ${{ inputs.environment || 'dev' }}
+      acr-url: variantplatformacr.azurecr.io
+      image-name: variantdash
+      docker-context: .
+      dockerfile: ./Dockerfile
+      build-args: |
+        NEXT_PUBLIC_CHEWBACCA_API_BASE_URL="https://chewie-webapp-ld2ijhpvmb34c.azurewebsites.net"
+      gitops-repository: infrastructure-as-code
+      gitops-directory-path: deployments/${{ inputs.environment || 'dev' }}/workloads/dash
+      gitops-workload-name: dash
+      gitops-file-to-update: values.yaml
+      gitops-yq-path: .image.tag
+      gitops-continue-on-error: 'true'
+      enable-gitops: 'true'
