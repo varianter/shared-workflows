@@ -70,6 +70,13 @@ on:
         required: false
         default: "false"
         type: string
+    outputs:
+      image-tag:
+        description: "Image tag that was built and pushed"
+        value: ${{ jobs.build-and-push.outputs.image-tag }}
+      gitops-commit-sha:
+        description: "Commit pushed to the GitOps repo (empty if GitOps is disabled, nothing changed, or the push failed). Pass to check-argocd-shared as expected-revision."
+        value: ${{ jobs.build-and-push.outputs.gitops-commit-sha }}
     secrets:
       VARIANT_ACR_CONTAINER_PUSH_USERNAME:
         description: "Username with push access to the Azure Container Registry"
