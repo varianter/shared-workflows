@@ -31,6 +31,14 @@ on:
         type: number
         required: false
         default: 600
+      refresh:
+        description: >-
+          Ask Argo CD to re-read the GitOps repo right away (first poll, then about once a minute while not ready)
+          instead of waiting for its own poll interval, which can be a few minutes. Needs only the read-only
+          permission the token already has. Set to false to leave the schedule entirely to Argo CD.
+        type: boolean
+        required: false
+        default: true
 
 permissions: {}
 
@@ -54,6 +62,7 @@ jobs:
           APP: ${{ inputs.app }}
           EXPECTED: ${{ inputs.expected-revision }}
           TIMEOUT: ${{ inputs.timeout-seconds }}
+          REFRESH: ${{ inputs.refresh }}
         run: |
           set -euo pipefail
 
@@ -98,12 +107,29 @@ jobs:
           #    Never print the raw response; only the summaries below.
           APP_JSON="$RUNNER_TEMP/argocd-app.json"
           trap 'rm -f "$APP_JSON"' EXIT
+          # Read the Application. With "refresh", Argo CD first re-reads the GitOps repo and answers once done
+          # (GET ...?refresh=normal needs only the `get` permission). Prints the HTTP status.
+          fetch_app() {
+            local q=""
+            [ "${1:-}" = refresh ] && q="?refresh=normal"
+            curl -sS --max-time 90 -o "$APP_JSON" -w '%{http_code}' \
+              -H "Authorization: Bearer $TOKEN" "$ARGOCD_URL/api/v1/applications/$APP$q" || true
+          }
+
           deadline=$((SECONDS + TIMEOUT))
           streak=0
+          poll=0
           REV_NOTE=""
           while :; do
-            CODE=$(curl -sS -o "$APP_JSON" -w '%{http_code}' \
-              -H "Authorization: Bearer $TOKEN" "$ARGOCD_URL/api/v1/applications/$APP")
+            CODE=000
+            if [ "$REFRESH" = "true" ] && [ "$streak" -eq 0 ] && [ $((poll % 6)) -eq 0 ]; then
+              CODE=$(fetch_app refresh)
+              if [ "$CODE" != "200" ]; then
+                echo "::warning::Refresh request failed (HTTP $CODE); reading without refresh"
+              fi
+            fi
+            poll=$((poll + 1))
+            [ "$CODE" = "200" ] || CODE=$(fetch_app)
             if [ "$CODE" != "200" ]; then
               echo "::error::Argo CD returned HTTP $CODE for application '$APP'"
               exit 1
