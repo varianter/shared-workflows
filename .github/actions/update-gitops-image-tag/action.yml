@@ -1,52 +1,50 @@
-name: 'Update GitOps Image Tag'
-description: 'Updates container image tags in GitOps repository using yq'
+name: "Update GitOps Image Tag"
+description: "Updates container image tags in GitOps repository using yq"
 
 inputs:
   repository:
-    description: 'Target GitOps repository'
+    description: "Target GitOps repository"
     required: false
-    default: 'infrastructure-as-code'
+    default: "infrastructure-as-code"
   workload-name:
-    description: 'Name of the workload (e.g., dash)'
+    description: "Name of the workload (e.g., dash)"
     required: true
   environment:
-    description: 'Target environment'
+    description: "Target environment"
     required: true
     # Valid options: lab, dev, prod
   directory-path:
-    description: 'Directory path to the file to update'
+    description: "Directory path to the file to update"
     required: true
   file-to-update:
-    description: 'File to update in the GitOps repository'
+    description: "File to update in the GitOps repository"
     required: false
-    default: 'values.yaml'
+    default: "values.yaml"
   yq-path:
-    description: 'YQ YAML path to the field to update'
+    description: "YQ YAML path to the field to update"
     required: false
-    default: '.image.tag'
+    default: ".image.tag"
   tag:
-    description: 'Container image tag to set'
+    description: "Container image tag to set"
     required: true
   gitops-repo-updater-private-key:
-    description: 'GitHub App private key for accessing the GitOps repository'
+    description: "GitHub App private key for accessing the GitOps repository"
     required: true
   gitops-repo-updater-app-id:
-    description: 'GitHub App ID for accessing the GitOps repository'
+    description: "GitHub App ID for accessing the GitOps repository"
     required: true
 
 outputs:
   commit-sha:
-    description: 'SHA of the commit created in the GitOps repository'
+    description: "SHA of the commit created in the GitOps repository"
     value: ${{ steps.push-changes.outputs.commit-sha }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
-
-
     - name: Obtain a GitHub App Installation Access Token
       id: githubAppAuth
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
         app-id: ${{ inputs.gitops-repo-updater-app-id }}
         private-key: ${{ inputs.gitops-repo-updater-private-key }}
@@ -54,7 +52,7 @@ runs:
         repositories: ${{ inputs.repository }}
 
     - name: Checkout GitOps repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         token: ${{ steps.githubAppAuth.outputs.token }}
         repository: varianter/${{ inputs.repository }}
@@ -74,17 +72,17 @@ runs:
       run: |
         cd gitops-repo
         FILE_PATH="${{ inputs.directory-path }}/${{ inputs.file-to-update }}"
-        
+
         if [ ! -f "$FILE_PATH" ]; then
           echo "Error: File $FILE_PATH does not exist"
           exit 1
         fi
-        
+
         echo "Updating $FILE_PATH"
         echo "Setting ${{ inputs.yq-path }} to ${{ inputs.tag }}"
-        
+
         yq eval '${{ inputs.yq-path }} = "${{ inputs.tag }}"' -i "$FILE_PATH"
-        
+
         echo "Updated content:"
         cat "$FILE_PATH"
       shell: bash
@@ -100,22 +98,22 @@ runs:
       id: push-changes
       run: |
         cd gitops-repo
-        
+
         if git diff --quiet; then
           echo "No changes to commit"
           echo "commit-sha=" >> $GITHUB_OUTPUT
           exit 0
         fi
-        
+
         git add "${{ inputs.directory-path }}/${{ inputs.file-to-update }}"
         git config pull.rebase true
-        
+
         # Try to push with retry logic
         MAX_RETRIES=5
         RETRY_COUNT=0
-        
+
         git commit -m "feat: deploy ${{ inputs.workload-name }} with image tag ${{ inputs.tag }} to ${{ inputs.environment }}"
-        
+
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
           if git push; then
             echo "Successfully pushed changes"
@@ -131,7 +129,7 @@ runs:
           fi
           fi
         done
-        
+
         COMMIT_SHA=$(git rev-parse HEAD)
         echo "commit-sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
         echo "Successfully pushed changes. Commit SHA: $COMMIT_SHA"
