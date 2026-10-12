@@ -183,7 +183,7 @@ jobs:
               echo "Resources not Healthy/Synced (kind/name only):"
               jq -r '.status.resources[]?
                      | select((.health.status // "Healthy") != "Healthy" or (.status // "Synced") != "Synced")
-                     | "- \(.kind)/\(.name): sync=\(.status // "n/a") health=\(.health.status // "n/a")"' "$APP_JSON"
+                     | "::error title=\(.kind)/\(.name)::sync=\(.status // "n/a") health=\(.health.status // "n/a")"' "$APP_JSON"
               echo "Conditions:"
               jq -r '.status.conditions[]?.type | "- \(.)"' "$APP_JSON"
               exit 1
