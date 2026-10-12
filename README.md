@@ -123,6 +123,7 @@ jobs:
 | `app`               | Yes      | Argo CD Application name, e.g. `tid-dev`                                                                                                                                     |
 | `expected-revision` | No       | GitOps commit that must be deployed. Passes once Argo CD has successfully synced this commit **or a later one**. Empty skips the check (only health is verified, with a warning) |
 | `timeout-seconds`   | No       | Default `600`                                                                                                                                                                |
+| `refresh`           | No       | Default `true`. Asks Argo CD to re-read the GitOps repo straight away (first poll, then about once a minute while not ready) instead of waiting for its poll interval (a few minutes). Uses only the read-only permission; set `false` to leave timing entirely to Argo CD |
 
 Notes:
 
