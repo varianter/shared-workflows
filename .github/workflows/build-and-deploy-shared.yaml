@@ -4,91 +4,91 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: "Deployment environment (e.g. dev, prod)"
+        description: 'Deployment environment (e.g. dev, prod)'
         required: true
         type: string
       acr-url:
-        description: "Azure Container Registry login server (e.g. example.azurecr.io)"
+        description: 'Azure Container Registry login server (e.g. example.azurecr.io)'
         required: true
         type: string
       image-name:
-        description: "Container image name (repository) to build and push"
+        description: 'Container image name (repository) to build and push'
         required: true
         type: string
       docker-context:
-        description: "Build context to pass to docker/build-push-action"
+        description: 'Build context to pass to docker/build-push-action'
         required: false
         default: .
         type: string
       dockerfile:
-        description: "Path to the Dockerfile used during build"
+        description: 'Path to the Dockerfile used during build'
         required: false
         default: ./Dockerfile
         type: string
       build-args:
-        description: "Optional newline-separated Docker build arguments (KEY=value)"
+        description: 'Optional newline-separated Docker build arguments (KEY=value)'
         required: false
-        default: ""
+        default: ''
         type: string
       enable-gitops:
         description: "Set to 'false' (string) to skip GitOps update step"
         required: false
-        default: "true"
+        default: 'true'
         type: string
       gitops-repository:
-        description: "Repository that hosts the GitOps deployment manifests"
+        description: 'Repository that hosts the GitOps deployment manifests'
         required: false
         default: infrastructure-as-code
         type: string
       gitops-directory-path:
-        description: "Relative path inside the GitOps repository to the manifest to update"
+        description: 'Relative path inside the GitOps repository to the manifest to update'
         required: false
-        default: ""
+        default: ''
         type: string
       gitops-file-to-update:
-        description: "Manifest filename to update within the directory path"
+        description: 'Manifest filename to update within the directory path'
         required: false
         default: values.yaml
         type: string
       gitops-yq-path:
-        description: "yq path that resolves to the image tag field"
+        description: 'yq path that resolves to the image tag field'
         required: false
         default: .image.tag
         type: string
       gitops-workload-name:
-        description: "Friendly workload name used in the GitOps commit message"
+        description: 'Friendly workload name used in the GitOps commit message'
         required: false
-        default: ""
+        default: ''
         type: string
       gitops-continue-on-error:
         description: "Set to 'false' (string) to fail the workflow if the GitOps step cannot push"
         required: false
-        default: "true"
+        default: 'true'
         type: string
       debug-metadata:
-        description: "Set to true to print docker/metadata-action outputs"
+        description: 'Set to true to print docker/metadata-action outputs'
         required: false
-        default: "false"
+        default: 'false'
         type: string
     outputs:
       image-tag:
-        description: "Image tag that was built and pushed"
+        description: 'Image tag that was built and pushed'
         value: ${{ jobs.build-and-push.outputs.image-tag }}
       gitops-commit-sha:
-        description: "Commit pushed to the GitOps repo (empty if GitOps is disabled, nothing changed, or the push failed). Pass to check-argocd-shared as expected-revision."
+        description: 'Commit pushed to the GitOps repo (empty if GitOps is disabled, nothing changed, or the push failed). Pass to check-argocd-shared as expected-revision.'
         value: ${{ jobs.build-and-push.outputs.gitops-commit-sha }}
     secrets:
       VARIANT_ACR_CONTAINER_PUSH_USERNAME:
-        description: "Username with push access to the Azure Container Registry"
+        description: 'Username with push access to the Azure Container Registry'
         required: true
       VARIANT_ACR_CONTAINER_PUSH_SECRET:
-        description: "Password or token with push access to the Azure Container Registry"
+        description: 'Password or token with push access to the Azure Container Registry'
         required: true
       VARIANT_GITHUB_REPO_UPDATER_APP_ID:
-        description: "GitHub App ID used when updating the GitOps repository"
+        description: 'GitHub App ID used when updating the GitOps repository'
         required: false
       VARIANT_GITHUB_REPO_UPDATER_PRIVATEKEY:
-        description: "GitHub App private key for updating the GitOps repository"
+        description: 'GitHub App private key for updating the GitOps repository'
         required: false
 
 jobs:
@@ -106,13 +106,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Azure Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.ACR_URL }}
           username: ${{ secrets.VARIANT_ACR_CONTAINER_PUSH_USERNAME }}
@@ -120,7 +120,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.ACR_URL }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -152,7 +152,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ${{ inputs['docker-context'] }}
           file: ${{ inputs.dockerfile }}
