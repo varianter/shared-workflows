@@ -91,9 +91,12 @@ on:
         description: 'GitHub App private key for updating the GitOps repository'
         required: false
 
+permissions: {}
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -109,10 +112,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to Azure Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.ACR_URL }}
           username: ${{ secrets.VARIANT_ACR_CONTAINER_PUSH_USERNAME }}
@@ -120,7 +123,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.ACR_URL }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -131,20 +134,26 @@ jobs:
 
       - name: Debug metadata outputs
         if: inputs.debug-metadata == 'true'
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+          META_VERSION: ${{ steps.meta.outputs.version }}
+          META_LABELS: ${{ steps.meta.outputs.labels }}
         run: |
-          echo "Tags: ${{ steps.meta.outputs.tags }}"
+          echo "Tags: $META_TAGS"
           echo '---'
-          echo "Version: ${{ steps.meta.outputs.version }}"
+          echo "Version: $META_VERSION"
           echo '---'
-          echo "Labels: ${{ steps.meta.outputs.labels }}"
+          echo "Labels: $META_LABELS"
 
       - name: Extract SHA tag for GitOps
         id: sha-tag
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          TAGS="${{ steps.meta.outputs.tags }}"
           SHA_TAG=$(echo "$TAGS" | grep -oP '(?<=:)[a-zA-Z0-9/_-]+-[a-f0-9]{7}$' | head -n 1)
           if [ -z "$SHA_TAG" ]; then
-            SHA_TAG="${{ steps.meta.outputs.version }}"
+            SHA_TAG="$VERSION"
           fi
           echo "Extracted tag: $SHA_TAG"
           echo "tag=$SHA_TAG" >> $GITHUB_OUTPUT
@@ -152,7 +161,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs['docker-context'] }}
           file: ${{ inputs.dockerfile }}
@@ -164,7 +173,9 @@ jobs:
           cache-to: type=registry,ref=${{ env.ACR_URL }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
       - name: Image digest
-        run: echo "Image pushed with digest ${{ steps.build.outputs.digest }}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "Image pushed with digest $DIGEST"
 
       - name: Deploy to ${{ env.ENVIRONMENT }} (Update GitOps repository with new image tag)
         id: update-gitops

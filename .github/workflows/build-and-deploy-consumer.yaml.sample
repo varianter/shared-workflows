@@ -15,6 +15,15 @@ on:
           - lab
           - dev
           - prod
+
+permissions:
+  contents: read
+
+# Deploys queue instead of cancelling, so two runs never race on the GitOps push
+concurrency:
+  group: deploy-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
 jobs:
   use-shared-workflow:
     uses: varianter/shared-workflows/.github/workflows/build-and-deploy-shared.yaml@main

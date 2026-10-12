@@ -59,19 +59,25 @@ runs:
         path: gitops-repo
 
     - name: Install yq
+      env:
+        YQ_VERSION: v4.54.1
+        YQ_SHA256: 8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f
       run: |
-        if ! command -v yq &> /dev/null; then
-          echo "Installing yq..."
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-        fi
+        curl -fsSL -o /tmp/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+        echo "${YQ_SHA256}  /tmp/yq" | sha256sum --check
+        sudo install -m 0755 /tmp/yq /usr/local/bin/yq
         yq --version
       shell: bash
 
     - name: Update image tag using yq
+      env:
+        DIRECTORY_PATH: ${{ inputs.directory-path }}
+        FILE_TO_UPDATE: ${{ inputs.file-to-update }}
+        YQ_PATH: ${{ inputs.yq-path }}
+        TAG: ${{ inputs.tag }}
       run: |
         cd gitops-repo
-        FILE_PATH="${{ inputs.directory-path }}/${{ inputs.file-to-update }}"
+        FILE_PATH="$DIRECTORY_PATH/$FILE_TO_UPDATE"
 
         if [ ! -f "$FILE_PATH" ]; then
           echo "Error: File $FILE_PATH does not exist"
@@ -79,9 +85,9 @@ runs:
         fi
 
         echo "Updating $FILE_PATH"
-        echo "Setting ${{ inputs.yq-path }} to ${{ inputs.tag }}"
+        echo "Setting $YQ_PATH to $TAG"
 
-        yq eval '${{ inputs.yq-path }} = "${{ inputs.tag }}"' -i "$FILE_PATH"
+        yq eval "$YQ_PATH = strenv(TAG)" -i "$FILE_PATH"
 
         echo "Updated content:"
         cat "$FILE_PATH"
@@ -96,6 +102,12 @@ runs:
 
     - name: Commit and push changes
       id: push-changes
+      env:
+        DIRECTORY_PATH: ${{ inputs.directory-path }}
+        FILE_TO_UPDATE: ${{ inputs.file-to-update }}
+        WORKLOAD_NAME: ${{ inputs.workload-name }}
+        TAG: ${{ inputs.tag }}
+        ENVIRONMENT: ${{ inputs.environment }}
       run: |
         cd gitops-repo
 
@@ -105,14 +117,14 @@ runs:
           exit 0
         fi
 
-        git add "${{ inputs.directory-path }}/${{ inputs.file-to-update }}"
+        git add "$DIRECTORY_PATH/$FILE_TO_UPDATE"
         git config pull.rebase true
 
         # Try to push with retry logic
         MAX_RETRIES=5
         RETRY_COUNT=0
 
-        git commit -m "feat: deploy ${{ inputs.workload-name }} with image tag ${{ inputs.tag }} to ${{ inputs.environment }}"
+        git commit -m "feat: deploy $WORKLOAD_NAME with image tag $TAG to $ENVIRONMENT"
 
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
           if git push; then
