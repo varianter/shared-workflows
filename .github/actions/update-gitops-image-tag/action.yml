@@ -1,46 +1,46 @@
-name: "Update GitOps Image Tag"
-description: "Updates container image tags in GitOps repository using yq"
+name: 'Update GitOps Image Tag'
+description: 'Updates container image tags in GitOps repository using yq'
 
 inputs:
   repository:
-    description: "Target GitOps repository"
+    description: 'Target GitOps repository'
     required: false
-    default: "infrastructure-as-code"
+    default: 'infrastructure-as-code'
   workload-name:
-    description: "Name of the workload (e.g., dash)"
+    description: 'Name of the workload (e.g., dash)'
     required: true
   environment:
-    description: "Target environment"
+    description: 'Target environment'
     required: true
     # Valid options: lab, dev, prod
   directory-path:
-    description: "Directory path to the file to update"
+    description: 'Directory path to the file to update'
     required: true
   file-to-update:
-    description: "File to update in the GitOps repository"
+    description: 'File to update in the GitOps repository'
     required: false
-    default: "values.yaml"
+    default: 'values.yaml'
   yq-path:
-    description: "YQ YAML path to the field to update"
+    description: 'YQ YAML path to the field to update'
     required: false
-    default: ".image.tag"
+    default: '.image.tag'
   tag:
-    description: "Container image tag to set"
+    description: 'Container image tag to set'
     required: true
   gitops-repo-updater-private-key:
-    description: "GitHub App private key for accessing the GitOps repository"
+    description: 'GitHub App private key for accessing the GitOps repository'
     required: true
   gitops-repo-updater-app-id:
-    description: "GitHub App ID for accessing the GitOps repository"
+    description: 'GitHub App ID for accessing the GitOps repository'
     required: true
 
 outputs:
   commit-sha:
-    description: "SHA of the commit created in the GitOps repository"
+    description: 'SHA of the commit created in the GitOps repository'
     value: ${{ steps.push-changes.outputs.commit-sha }}
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
     - name: Obtain a GitHub App Installation Access Token
       id: githubAppAuth

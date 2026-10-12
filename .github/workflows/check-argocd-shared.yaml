@@ -15,7 +15,7 @@ on:
   workflow_call:
     inputs:
       app:
-        description: "Argo CD Application name, e.g. tid-dev"
+        description: 'Argo CD Application name, e.g. tid-dev'
         type: string
         required: true
       expected-revision:
@@ -25,9 +25,9 @@ on:
           Empty skips the revision check and only verifies health (a warning is logged).
         type: string
         required: false
-        default: ""
+        default: ''
       timeout-seconds:
-        description: "How long to wait before failing"
+        description: 'How long to wait before failing'
         type: number
         required: false
         default: 600
