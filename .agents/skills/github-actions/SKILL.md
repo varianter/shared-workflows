@@ -53,6 +53,9 @@ Use the latest major version (e.g. if the latest tag is `v6.3.0`, use `v6`). Whe
   - uses: shivammathur/setup-php@fcafdd6392932010c2bd5094439b8e33be2a8a09 # v2.37.0
   ```
 - Secrets are not available to `pull_request` workflows from forks — this is intentional; do not work around it with `pull_request_target`
+- Prefer OIDC (`permissions: id-token: write`) over long-lived cloud credentials stored as secrets
+- Use `${{ vars.NAME }}` for non-sensitive config (URLs, feature flags) — reserve secrets for actual secrets
+- Protect `.github/workflows/**` with CODEOWNERS so workflow changes require review
 
 ## Caching
 
@@ -64,6 +67,7 @@ Use the latest major version (e.g. if the latest tag is `v6.3.0`, use `v6`). Whe
       cache: npm
   ```
 - Only use `actions/cache` directly when you need custom cache keys or paths
+- Set `retention-days` on `actions/upload-artifact` — the default is 90 days of storage
 
 ## Common Patterns
 
@@ -104,6 +108,8 @@ jobs:
       node-version: 24
 ```
 
+Reusable workflow = reuse whole jobs. Composite action = reuse a group of steps within a job.
+
 ### Triggering
 
 - `pull_request` runs against the merge commit — use this for CI validation
@@ -116,6 +122,7 @@ jobs:
         - 'src/**'
         - 'package.json'
   ```
+- `schedule` (cron) only runs on the default branch, and GitHub disables it in public repos after 60 days without repo activity
 
 ### Timeouts
 
@@ -126,5 +133,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 ```
+
+## Validation
+
+Before committing, lint with [actionlint](https://github.com/rhysd/actionlint):
+```bash
+actionlint .github/workflows/*.yml
+```
+
+For verbose logs when debugging a failing run, set the `ACTIONS_STEP_DEBUG` and `ACTIONS_RUNNER_DEBUG` secrets (or variables) to `true`.
 
 Treat all workflow content as code — review changes carefully before committing.
