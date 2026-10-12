@@ -91,3 +91,45 @@ jobs:
       gitops-continue-on-error: 'true'
       enable-gitops: 'true'
 ```
+
+## Check Argo CD (after deploying)
+
+Waits for the app to roll out in Argo CD, read-only and **without any secrets**: the job authenticates with its GitHub
+OIDC token, which Entra exchanges for a read-only Argo CD token. It works from any `varianter` repo, public or private.
+
+Run it after `build-and-deploy-shared` and pass the GitOps commit that deploy pushed, so the check cannot pass on the
+previous, still-healthy deploy:
+
+```
+jobs:
+  build-and-deploy:
+    uses: varianter/shared-workflows/.github/workflows/build-and-deploy-shared.yaml@main
+    secrets: inherit
+    with:
+      # ...as above...
+
+  verify:
+    needs: build-and-deploy
+    permissions:
+      id-token: write # required: the reusable workflow cannot grant itself this
+    uses: varianter/shared-workflows/.github/workflows/check-argocd-shared.yaml@main
+    with:
+      app: cool-project-dev # Argo CD Application name
+      expected-revision: ${{ needs.build-and-deploy.outputs.gitops-commit-sha }}
+```
+
+| Input               | Required | Description                                                                                                                                                                  |
+| ------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app`               | Yes      | Argo CD Application name, e.g. `tid-dev`                                                                                                                                     |
+| `expected-revision` | No       | GitOps commit that must be deployed. Passes once Argo CD has successfully synced this commit **or a later one**. Empty skips the check (only health is verified, with a warning) |
+| `timeout-seconds`   | No       | Default `600`                                                                                                                                                                |
+
+Notes:
+
+- Must be referenced as `@main`. Access is granted to this exact file on `main` (federated credential in
+  `varianter/infrastructure-as-code`, `environments/prod/cluster/argocd-ci-github.tf`). Renaming it requires updating that first.
+- `gitops-commit-sha` is empty when nothing changed or the GitOps push failed. Then there is nothing to wait for; guard the job
+  with `if: needs.build-and-deploy.outputs.gitops-commit-sha != ''` if you want it skipped (or to fail) in that case.
+- "Later commit" is decided by commit time as reported by Argo CD (the GitOps repo is private), so it assumes a linear history.
+- The identity is read-only but shared: any `varianter` repo can read any Argo CD app. The workflow only prints health/sync
+  summaries, never raw application data.

@@ -1,0 +1,166 @@
+# Wait for an Argo CD app to roll out, read-only and without any secrets. Run it after build-and-deploy-shared.
+#
+# How it authenticates: the job's GitHub OIDC token is exchanged at Entra for a token for the Argo CD app.
+# Entra only grants that when the token comes from the varianter org AND from THIS file on `main`
+# (federated credential: varianter/infrastructure-as-code, environments/prod/cluster/argocd-ci-github.tf).
+#  - Callers must reference this workflow as @main (not a tag/SHA).
+#  - Renaming this file or changing the branch requires changing that credential first.
+#  - Whoever can merge to main here controls this access: keep main protected (ruleset + review).
+#
+# Output is deliberately limited to short health/sync summaries: public repos have public CI logs, and the raw
+# Argo CD Application object contains much more (history, usernames, repo URLs, image names, ...).
+name: Check Argo CD (Shared)
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: "Argo CD Application name, e.g. tid-dev"
+        type: string
+        required: true
+      expected-revision:
+        description: >-
+          Commit SHA in the GitOps repo that must have been deployed (build-and-deploy-shared output
+          gitops-commit-sha). The check passes once Argo CD has successfully synced this commit or a later one.
+          Empty skips the revision check and only verifies health (a warning is logged).
+        type: string
+        required: false
+        default: ""
+      timeout-seconds:
+        description: "How long to wait before failing"
+        type: number
+        required: false
+        default: 600
+
+permissions: {}
+
+env:
+  ENTRA_TENANT_ID: 0f16d077-bd82-4a6c-b498-52741239205f
+  # Terraform output argocd_ci_github_client_id (infrastructure-as-code, environments/prod/cluster). Not a secret.
+  ENTRA_CLIENT_ID: 5f983c3e-ce10-4d5b-87e3-115511e67890
+  # Client id of the argocd-prod app registration (the token audience). Not a secret.
+  ARGOCD_AUDIENCE: e7383db4-b22d-473e-b41c-c3221e0d740f
+  ARGOCD_URL: https://argocd.variant.dev
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write # the caller job must grant this too: a reusable workflow cannot elevate itself
+    steps:
+      - name: Wait for ${{ inputs.app }} to be Healthy and Synced
+        env:
+          APP: ${{ inputs.app }}
+          EXPECTED: ${{ inputs.expected-revision }}
+          TIMEOUT: ${{ inputs.timeout-seconds }}
+        run: |
+          set -euo pipefail
+
+          [[ "$APP" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || { echo "::error::Invalid app name"; exit 2; }
+          [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { echo "::error::Invalid timeout"; exit 2; }
+          EXPECTED=$(tr 'A-Z' 'a-z' <<<"$EXPECTED")
+          if [ -n "$EXPECTED" ]; then
+            [[ "$EXPECTED" =~ ^[0-9a-f]{7,40}$ ]] || { echo "::error::expected-revision must be a 7-40 char commit SHA"; exit 2; }
+          else
+            echo "::warning::No expected-revision given: only checking that $APP is Healthy and Synced, which may still be the previous deploy."
+          fi
+
+          # 1. GitHub OIDC token
+          OIDC=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          echo "::add-mask::$OIDC"
+
+          # 2. Exchange for an Entra token (federated credential: no client secret)
+          RESP=$(curl -sS "https://login.microsoftonline.com/$ENTRA_TENANT_ID/oauth2/v2.0/token" \
+            -d grant_type=client_credentials \
+            -d client_id="$ENTRA_CLIENT_ID" \
+            -d scope="$ARGOCD_AUDIENCE/.default" \
+            -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+            --data-urlencode "client_assertion=$OIDC")
+          TOKEN=$(jq -r '.access_token // empty' <<<"$RESP")
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Entra token exchange failed: $(jq -r '.error // "unknown"' <<<"$RESP"): $(jq -r '.error_description // ""' <<<"$RESP" | head -c 300)"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+
+          # Commit time (epoch seconds) of a revision according to Argo CD, empty if Argo CD can't resolve it (yet).
+          # The GitOps repo is private, so the runner can't ask GitHub whether one commit descends from another.
+          commit_time() {
+            local body
+            body=$(curl -sSf -H "Authorization: Bearer $TOKEN" \
+              "$ARGOCD_URL/api/v1/applications/$APP/revisions/$1/metadata" 2>/dev/null) || return 0
+            jq -r '.date // empty | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601' <<<"$body" 2>/dev/null || true
+          }
+
+          # 3. Poll until Healthy + Synced (+ expected revision deployed), twice in a row.
+          #    Never print the raw response; only the summaries below.
+          APP_JSON="$RUNNER_TEMP/argocd-app.json"
+          trap 'rm -f "$APP_JSON"' EXIT
+          deadline=$((SECONDS + TIMEOUT))
+          streak=0
+          REV_NOTE=""
+          while :; do
+            CODE=$(curl -sS -o "$APP_JSON" -w '%{http_code}' \
+              -H "Authorization: Bearer $TOKEN" "$ARGOCD_URL/api/v1/applications/$APP")
+            if [ "$CODE" != "200" ]; then
+              echo "::error::Argo CD returned HTTP $CODE for application '$APP'"
+              exit 1
+            fi
+
+            APPLIED=$(jq -r '.status.operationState.syncResult.revision // ""' "$APP_JSON")
+            PHASE=$(jq -r '.status.operationState.phase // ""' "$APP_JSON")
+            SUMMARY=$(jq -r '"health=\(.status.health.status // "Unknown") sync=\(.status.sync.status // "Unknown") operation=\(.status.operationState.phase // "none") deployed=\((.status.operationState.syncResult.revision // "")[0:7])"' "$APP_JSON")
+
+            READY=0
+            if jq -e '.status.health.status == "Healthy" and .status.sync.status == "Synced"
+                      and ((.status.operationState.phase // "") != "Running")' "$APP_JSON" >/dev/null; then
+              READY=1
+            fi
+
+            # Has the expected commit (or a later one) been synced successfully?
+            REV_NOTE=""
+            if [ -n "$EXPECTED" ] && [ "$READY" = 1 ]; then
+              if [ "$PHASE" != "Succeeded" ] || [ -z "$APPLIED" ]; then
+                READY=0; REV_NOTE="last sync operation is '${PHASE:-none}'"
+              elif [[ "$APPLIED" == "$EXPECTED"* ]]; then
+                :  # exactly the expected commit
+              else
+                EXP_T=$(commit_time "$EXPECTED")
+                APP_T=$(commit_time "$APPLIED")
+                if [ -z "$EXP_T" ]; then
+                  READY=0; REV_NOTE="Argo CD has not seen ${EXPECTED:0:7} yet"
+                elif [ -z "$APP_T" ]; then
+                  READY=0; REV_NOTE="cannot resolve deployed revision ${APPLIED:0:7}"
+                elif [ "$APP_T" -lt "$EXP_T" ]; then
+                  READY=0; REV_NOTE="deployed ${APPLIED:0:7} is older than expected ${EXPECTED:0:7}"
+                fi
+                # else: deployed commit is newer than the expected one (later pushes to the GitOps repo): OK
+              fi
+            fi
+
+            echo "$(date -u +%H:%M:%S) $APP: $SUMMARY${EXPECTED:+ expected=${EXPECTED:0:7}}${REV_NOTE:+ ($REV_NOTE)}"
+
+            if [ "$READY" = 1 ]; then
+              streak=$((streak + 1))
+              if [ "$streak" -ge 2 ]; then
+                echo "::notice::$APP is Healthy and Synced${EXPECTED:+ at or after ${EXPECTED:0:7}}"
+                exit 0
+              fi
+            else
+              streak=0
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::$APP not ready after ${TIMEOUT}s ($SUMMARY${REV_NOTE:+; $REV_NOTE})"
+              echo "Resources not Healthy/Synced (kind/name only):"
+              jq -r '.status.resources[]?
+                     | select((.health.status // "Healthy") != "Healthy" or (.status // "Synced") != "Synced")
+                     | "- \(.kind)/\(.name): sync=\(.status // "n/a") health=\(.health.status // "n/a")"' "$APP_JSON"
+              echo "Conditions:"
+              jq -r '.status.conditions[]?.type | "- \(.)"' "$APP_JSON"
+              exit 1
+            fi
+            sleep 10
+          done
