@@ -37,7 +37,7 @@ permissions: {}
 env:
   ENTRA_TENANT_ID: 0f16d077-bd82-4a6c-b498-52741239205f
   # Terraform output argocd_ci_github_client_id (infrastructure-as-code, environments/prod/cluster). Not a secret.
-  ENTRA_CLIENT_ID: REPLACE_WITH_TERRAFORM_OUTPUT_argocd_ci_github_client_id
+  ENTRA_CLIENT_ID: 5f983c3e-ce10-4d5b-87e3-115511e67890
   # Client id of the argocd-prod app registration (the token audience). Not a secret.
   ARGOCD_AUDIENCE: e7383db4-b22d-473e-b41c-c3221e0d740f
   ARGOCD_URL: https://argocd.variant.dev
