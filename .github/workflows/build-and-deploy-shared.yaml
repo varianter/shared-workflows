@@ -156,7 +156,7 @@ jobs:
             SHA_TAG="$VERSION"
           fi
           echo "Extracted tag: $SHA_TAG"
-          echo "tag=$SHA_TAG" >> $GITHUB_OUTPUT
+          echo "tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - name: Build and push Docker image
