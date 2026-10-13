@@ -134,3 +134,17 @@ Notes:
 - "Later commit" is decided by commit time as reported by Argo CD (the GitOps repo is private), so it assumes a linear history.
 - The identity is read-only but shared: any `varianter` repo can read any Argo CD app. The workflow only prints health/sync
   summaries, never raw application data.
+
+## Linting workflows locally
+
+CI runs [actionlint](https://rhysd.github.io/actionlint/) on every PR touching `.github/`. Run it first, from the repo root. The only requirement is Docker (nothing is installed, and the repo is mounted into the container):
+
+```
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
+```
+
+No output means no problems. The `.sample` file isn't picked up automatically, so lint it like this:
+
+```
+docker run --rm -i rhysd/actionlint:1.7.12 - < .github/workflows/build-and-deploy-consumer.yaml.sample
+```
